@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import json
 import os
 
@@ -16,9 +15,7 @@ class YouDao(CheckIn):
     @staticmethod
     def sign(cookies):
         ad_space = 0
-        refresh_cookies_res = requests.get(
-            "http://note.youdao.com/login/acc/pe/getsess?product=YNOTE", cookies=cookies
-        )
+        refresh_cookies_res = requests.get("http://note.youdao.com/login/acc/pe/getsess?product=YNOTE", cookies=cookies)
         cookies = dict(refresh_cookies_res.cookies)
         url = "https://note.youdao.com/yws/api/daupromotion?method=sync"
         res = requests.post(url=url, cookies=cookies)
@@ -37,7 +34,7 @@ class YouDao(CheckIn):
                 sync_space = res.json().get("rewardSpace", 0) // 1048576
                 checkin_space = checkin_response.json().get("space", 0) // 1048576
                 space = sync_space + checkin_space + ad_space
-                youdao_message = "+{0}M".format(space)
+                youdao_message = f"+{space}M"
             else:
                 youdao_message = "获取失败"
         else:
@@ -45,10 +42,7 @@ class YouDao(CheckIn):
         return youdao_message
 
     def main(self):
-        youdao_cookie = {
-            item.split("=")[0]: item.split("=")[1]
-            for item in self.check_item.get("cookie").split("; ")
-        }
+        youdao_cookie = {item.split("=")[0]: item.split("=")[1] for item in self.check_item.get("cookie").split("; ")}
         try:
             ynote_pers = youdao_cookie.get("YNOTE_PERS", "")
             uid = ynote_pers.split("||")[-2]
@@ -67,7 +61,6 @@ class YouDao(CheckIn):
 if __name__ == "__main__":
     with open(
         os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json"),
-        "r",
         encoding="utf-8",
     ) as f:
         datas = json.loads(f.read())

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import json
 import os
 import re
@@ -80,14 +79,12 @@ class AcFun(CheckIn):
             "subChannelName": "动画",
         }
         response = session.get(url=f"https://www.acfun.cn/v/ac{self.contentid}")
-        videoId = re.findall(r'"currentVideoId":(\d+),', response.text)
-        subChannel = re.findall(
-            r'{subChannelId:(\d+),subChannelName:"([\u4e00-\u9fa5]+)"}', response.text
-        )
-        if videoId:
-            data["videoId"] = videoId[0]
-            data["subChannelId"] = subChannel[0][0]
-            data["subChannelName"] = subChannel[0][1]
+        video_id = re.findall(r'"currentVideoId":(\d+),', response.text)
+        sub_channel = re.findall(r'{subChannelId:(\d+),subChannelName:"([\u4e00-\u9fa5]+)"}', response.text)
+        if video_id:
+            data["videoId"] = video_id[0]
+            data["subChannelId"] = sub_channel[0][0]
+            data["subChannelName"] = sub_channel[0][1]
         res = session.post(url=url, data=data).json()
         msg = "弹幕成功" if res.get("result") == 0 else "弹幕失败"
         return {"name": "弹幕任务", "value": msg}
@@ -167,9 +164,13 @@ class AcFun(CheckIn):
                 like_msg,
                 danmu_msg,
                 throwbanana_msg,
-            ] + info_msg
+                *info_msg,
+            ]
         else:
-            msg = [{"name": "帐号信息", "value": phone}, {"name": "错误信息", "value": res}]
+            msg = [
+                {"name": "帐号信息", "value": phone},
+                {"name": "错误信息", "value": res},
+            ]
         msg = "\n".join([f"{one.get('name')}: {one.get('value')}" for one in msg])
         return msg
 
@@ -177,7 +178,6 @@ class AcFun(CheckIn):
 if __name__ == "__main__":
     with open(
         os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json"),
-        "r",
         encoding="utf-8",
     ) as f:
         datas = json.loads(f.read())

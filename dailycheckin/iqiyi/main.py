@@ -1,9 +1,9 @@
-# -*- coding: utf-8 -*-
 import json
 import os
 import re
 import time
 from urllib.parse import unquote
+from uuid import uuid4
 
 import requests
 
@@ -18,22 +18,13 @@ class IQIYI(CheckIn):
 
     @staticmethod
     def parse_cookie(cookie):
-        p00001 = (
-            re.findall(r"P00001=(.*?);", cookie)[0]
-            if re.findall(r"P00001=(.*?);", cookie)
-            else ""
-        )
-        p00002 = (
-            re.findall(r"P00002=(.*?);", cookie)[0]
-            if re.findall(r"P00002=(.*?);", cookie)
-            else ""
-        )
-        p00003 = (
-            re.findall(r"P00003=(.*?);", cookie)[0]
-            if re.findall(r"P00003=(.*?);", cookie)
-            else ""
-        )
-        return p00001, p00002, p00003
+        p00001 = re.findall(r"P00001=(.*?);", cookie)[0] if re.findall(r"P00001=(.*?);", cookie) else ""
+        p00002 = re.findall(r"P00002=(.*?);", cookie)[0] if re.findall(r"P00002=(.*?);", cookie) else ""
+        p00003 = re.findall(r"P00003=(.*?);", cookie)[0] if re.findall(r"P00003=(.*?);", cookie) else ""
+        __dfp = re.findall(r"__dfp=(.*?);", cookie)[0] if re.findall(r"__dfp=(.*?);", cookie) else ""
+        __dfp = __dfp.split("@")[0]
+        qyid = re.findall(r"QC005=(.*?);", cookie)[0] if re.findall(r"QC005=(.*?);", cookie) else ""
+        return p00001, p00002, p00003, __dfp, qyid
 
     @staticmethod
     def user_information(p00001):
@@ -47,11 +38,11 @@ class IQIYI(CheckIn):
         if res["code"] == "A00000":
             try:
                 res_data = res.get("data", {})
-                level = res_data.get("level", 0)  # VIP 等级
-                growthvalue = res_data.get("growthvalue", 0)  # 当前 VIP 成长值
-                distance = res_data.get("distance", 0)  # 升级需要成长值
-                deadline = res_data.get("deadline", "非 VIP 用户")  # VIP 到期时间
-                today_growth_value = res_data.get("todayGrowthValue", 0)  # 今日成长值
+                level = res_data.get("level", 0)
+                growthvalue = res_data.get("growthvalue", 0)
+                distance = res_data.get("distance", 0)
+                deadline = res_data.get("deadline", "非 VIP 用户")
+                today_growth_value = res_data.get("todayGrowthValue", 0)
                 msg = [
                     {"name": "VIP 等级", "value": level},
                     {"name": "当前成长", "value": growthvalue},
@@ -63,106 +54,57 @@ class IQIYI(CheckIn):
                 msg = [
                     {"name": "账号信息", "value": str(e)},
                 ]
-                print(msg)
         else:
             msg = [
                 {"name": "账号信息", "value": res.get("msg")},
             ]
         return msg
 
-    @staticmethod
-    def sign(p00001):
-        """
-        VIP 签到
-        """
-        url = "https://tc.vip.iqiyi.com/taskCenter/task/queryUserTask"
-        params = {"P00001": p00001, "autoSign": "yes"}
-        res = requests.get(url=url, params=params).json()
-        if res["code"] == "A00000":
-            try:
-                cumulate_sign_days_sum = res["data"]["monthlyGrowthReward"]
-                msg = [
-                    {"name": "当月成长", "value": f"{cumulate_sign_days_sum}成长值"},
-                ]
-            except Exception as e:
-                print(e)
-                msg = [{"name": "当月成长", "value": str(e)}]
+    def lottery(self, p00001, award_list=[]):
+        url = "https://act.vip.iqiyi.com/shake-api/lottery"
+        params = {
+            "P00001": p00001,
+            "lotteryType": "0",
+            "actCode": "0k9GkUcjqqj4tne8",
+        }
+        params = {
+            "P00001": p00001,
+            "deviceID": str(uuid4()),
+            "version": "15.3.0",
+            "platform": str(uuid4())[:16],
+            "lotteryType": "0",
+            "actCode": "0k9GkUcjqqj4tne8",
+            "extendParams": json.dumps(
+                {
+                    "appIds": "iqiyi_pt_vip_iphone_video_autorenew_12m_348yuan_v2",
+                    "supportSk2Identity": True,
+                    "testMode": "0",
+                    "iosSystemVersion": "17.4",
+                    "bundleId": "com.qiyi.iphone",
+                }
+            ),
+        }
+        res = requests.get(url, params=params).json()
+        msgs = []
+        if res.get("code") == "A00000":
+            award_info = res.get("data", {}).get("title")
+            award_list.append(award_info)
+            time.sleep(3)
+            return self.lottery(p00001=p00001, award_list=award_list)
+        elif res.get("msg") == "抽奖次数用完":
+            if award_list:
+                msgs = [{"name": "每天摇一摇", "value": "、".join(award_list)}]
+            else:
+                msgs = [{"name": "每天摇一摇", "value": res.get("msg")}]
         else:
-            msg = [{"name": "当月成长", "value": res.get("msg")}]
-        return msg
-
-    @staticmethod
-    def query_user_task(p00001):
-        """
-        获取 VIP 日常任务 和 taskCode(任务状态)
-        """
-        url = "https://tc.vip.iqiyi.com/taskCenter/task/queryUserTask"
-        params = {"P00001": p00001}
-        task_list = []
-        res = requests.get(url=url, params=params).json()
-        if res["code"] == "A00000":
-            for item in res["data"]["tasks"]["daily"]:
-                task_list.append(
-                    {
-                        "name": item["name"],
-                        "taskCode": item["taskCode"],
-                        "status": item["status"],
-                        "taskReward": item["taskReward"]["task_reward_growth"],
-                    }
-                )
-        return task_list
-
-    @staticmethod
-    def join_task(p00001, task_list):
-        """
-        遍历完成任务
-        """
-        url = "https://tc.vip.iqiyi.com/taskCenter/task/joinTask"
-        params = {
-            "P00001": p00001,
-            "taskCode": "",
-            "platform": "bb136ff4276771f3",
-            "lang": "zh_CN",
-        }
-        for item in task_list:
-            if item["status"] == 2:
-                params["taskCode"] = item["taskCode"]
-                requests.get(url=url, params=params)
-
-    @staticmethod
-    def get_task_rewards(p00001, task_list):
-        """
-        获取任务奖励
-        :return: 返回信息
-        """
-        url = "https://tc.vip.iqiyi.com/taskCenter/task/getTaskRewards"
-        params = {
-            "P00001": p00001,
-            "taskCode": "",
-            "platform": "bb136ff4276771f3",
-            "lang": "zh_CN",
-        }
-        growth_task = 0
-        for item in task_list:
-            if item["status"] == 0:
-                params["taskCode"] = item.get("taskCode")
-                requests.get(url=url, params=params)
-            elif item["status"] == 4:
-                requests.get(
-                    url="https://tc.vip.iqiyi.com/taskCenter/task/notify", params=params
-                )
-                params["taskCode"] = item.get("taskCode")
-                requests.get(url=url, params=params)
-            elif item["status"] == 1:
-                growth_task += item["taskReward"]
-        msg = {"name": "任务奖励", "value": f"+{growth_task}成长值"}
-        return msg
+            msgs = [{"name": "每天摇一摇", "value": res.get("msg")}]
+        return msgs
 
     @staticmethod
     def draw(draw_type, p00001, p00003):
         """
         查询抽奖次数(必),抽奖
-        :param draw_type: 类型。0 查询次数；1 抽奖
+        :param draw_type: 类型 0 查询次数 1 抽奖
         :param p00001: 关键参数
         :param p00003: 关键参数
         :return: {status, msg, chance}
@@ -199,23 +141,40 @@ class IQIYI(CheckIn):
                 msg = res["errorReason"]
         return {"status": False, "msg": msg, "chance": 0}
 
-    def main(self):
-        p00001, p00002, p00003 = self.parse_cookie(self.check_item.get("cookie"))
-        sign_msg = self.sign(p00001=p00001)
-        chance = self.draw(0, p00001=p00001, p00003=p00003)["chance"]
-        if chance:
-            draw_msg = ""
-            for i in range(chance):
-                ret = self.draw(1, p00001=p00001, p00003=p00003)
-                draw_msg += ret["msg"] + ";" if ret["status"] else ""
+    def level_right(self, p00001):
+        data = {"code": "k8sj74234c683f", "P00001": p00001}
+        res = requests.post(url="https://act.vip.iqiyi.com/level-right/receive", data=data).json()
+        msg = res["msg"]
+        return [{"name": "V7 免费升级星钻", "value": msg}]
+
+    def give_times(self, p00001):
+        url = "https://pcell.iqiyi.com/lotto/giveTimes"
+        times_code_list = ["browseWeb", "browseWeb", "bookingMovie"]
+        for times_code in times_code_list:
+            params = {
+                "actCode": "bcf9d354bc9f677c",
+                "timesCode": times_code,
+                "P00001": p00001,
+            }
+            requests.get(url, params=params)
+
+    def lotto_lottery(self, p00001):
+        self.give_times(p00001=p00001)
+        gift_list = []
+        for _ in range(5):
+            url = "https://pcell.iqiyi.com/lotto/lottery"
+            params = {"actCode": "bcf9d354bc9f677c", "P00001": p00001}
+            response = requests.get(url, params=params)
+            gift_name = response.json()["data"]["giftName"]
+            if gift_name and "未中奖" not in gift_name:
+                gift_list.append(gift_name)
+        if gift_list:
+            return [{"name": "白金抽奖", "value": "、".join(gift_list)}]
         else:
-            draw_msg = "抽奖机会不足"
-        task_msg = ""
-        for one in range(6):
-            task_list = self.query_user_task(p00001=p00001)
-            self.join_task(p00001=p00001, task_list=task_list)
-            time.sleep(10)
-            task_msg = self.get_task_rewards(p00001=p00001, task_list=task_list)
+            return [{"name": "白金抽奖", "value": "未中奖"}]
+
+    def main(self):
+        p00001, p00002, p00003, dfp, qyid = self.parse_cookie(self.check_item.get("cookie"))
         try:
             user_info = json.loads(unquote(p00002, encoding="utf-8"))
             user_name = user_info.get("user_name")
@@ -225,20 +184,38 @@ class IQIYI(CheckIn):
             print(f"获取账号信息失败，错误信息: {e}")
             nickname = "未获取到，请检查 Cookie 中 P00002 字段"
             user_name = "未获取到，请检查 Cookie 中 P00002 字段"
+        _user_msg = self.user_information(p00001=p00001)
+        lotto_lottery_msg = self.lotto_lottery(p00001=p00001)
+        if _user_msg[4].get("value") != "非 VIP 用户":
+            level_right_msg = self.level_right(p00001=p00001)
+        else:
+            level_right_msg = [
+                {
+                    "name": "V7 免费升级星钻",
+                    "value": "非 VIP 用户",
+                }
+            ]
+        chance = self.draw(draw_type=0, p00001=p00001, p00003=p00003)["chance"]
+        lottery_msgs = self.lottery(p00001=p00001, award_list=[])
+        if chance:
+            draw_msg = ""
+            for _ in range(chance):
+                ret = self.draw(draw_type=1, p00001=p00001, p00003=p00003)
+                draw_msg += ret["msg"] + ";" if ret["status"] else ""
+        else:
+            draw_msg = "抽奖机会不足"
+
         user_msg = self.user_information(p00001=p00001)
 
-        msg = (
-            [
-                {"name": "用户账号", "value": user_name},
-                {"name": "用户昵称", "value": nickname},
-            ]
-            + user_msg
-            + sign_msg
-            + [
-                task_msg,
-                {"name": "抽奖奖励", "value": draw_msg},
-            ]
-        )
+        msg = [
+            {"name": "用户账号", "value": user_name},
+            {"name": "用户昵称", "value": nickname},
+            *user_msg,
+            {"name": "抽奖奖励", "value": draw_msg},
+            *lottery_msgs,
+            *level_right_msg,
+            *lotto_lottery_msg,
+        ]
         msg = "\n".join([f"{one.get('name')}: {one.get('value')}" for one in msg])
         return msg
 
@@ -246,7 +223,6 @@ class IQIYI(CheckIn):
 if __name__ == "__main__":
     with open(
         os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json"),
-        "r",
         encoding="utf-8",
     ) as f:
         datas = json.loads(f.read())
